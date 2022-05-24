@@ -1,0 +1,483 @@
+---
+title: "Manomet_Data"
+author: "Adam Remondi"
+date: "5/10/2022"
+output: html_document
+---
+
+Most helpful is sex, density, size(CW), shell condition, eggs(secondary) and how that varies over different seasons and by site. Protocol for entering this data and how this can be an easier/standardized process across the different sites. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Store string containing all required packages
+my_packages <- c('igraph', 'RColorBrewer', 'readr', 'ggplot2', 'tidyverse', 'berryFunctions', 'dplyr', 'stringr')
+```
+
+Load the libraries and install packages
+
+```{r}
+#install.packages("tidyverse")
+library(tidyverse)
+library(ggplot2)
+library(gganimate)
+library(dplyr)
+library(gifski)
+library(readr)
+library(leaflet)
+library(viridis)
+library(lubridate)
+
+```
+
+Read in the raw species and transect data from GitHub
+There are 3 different sites where the transect and species data was collected: "Edward McC. Blair Marine Research Station (MDR)" "Schoodic Institute at Acadia National Park"      "Shoals Marine Laboratory"
+```{r}
+transectDf <- read.csv(url("https://raw.githubusercontent.com/LaurieLBaker/NeSCA-Field-Stations/main/data/NeCSA_data_template_Test_Horizontal_Transect_Data.csv"))
+```
+
+Read in the raw temperature data from GitHub
+There are 6 different sites where the temperature data was collected: "Shoals Marine Laboratory","Edward McC. Blair Marine Research Station (MDR)" "Darling Marine Center",            "Schoodic Institute at Acadia National Park","Bates-Morse Mountain Conservation Area", and "Bigelow Laboratory for Ocean Sciences" 
+```{r}
+tempDf <- read.csv(url("https://raw.githubusercontent.com/LaurieLBaker/NeSCA-Field-Stations/main/data/NeCSA_data_template_Temperature_Data.csv"))
+```
+
+Define the waterTemps variable, which contains the whole water Temperature column.
+Then create a for loop that calculates the temperature change for each observation. The last row is left blank because there is no data point to subtract the last one from.
+
+```{r}
+waterTemps = tempDf$Water.Temperature
+for(i in 1:(nrow(tempDf))){
+  tempDf$TempDiff[i] = abs(waterTemps[i+1] - waterTemps[i])
+}
+
+#edit the tempDiff column to round each of the numbers in the column to two decimal places
+tempDf$TempDiff <- round(tempDf$TempDiff, digit=2)
+```
+
+```{r field-stations-leaflet, echo = FALSE}
+# Create df for field station locations
+FieldStationDf <- tempDf %>%
+  group_by(`Field.Station`) %>%
+  select(`Field.Station`, Longitude, Latitude) %>%
+  distinct()
+# Create labels for leaflet
+labels <- sprintf(
+  "<strong>%s</strong><br/>",
+    FieldStationDf$`Field.Station` %>%
+      lapply(htmltools::HTML)) 
+# Generate Gulf of Maine leaflet indicating location of each field station
+leaflet(FieldStationDf) %>%
+  addTiles() %>%
+  addProviderTiles(providers$Esri.OceanBasemap) %>%
+  addMarkers(~Longitude, ~Latitude, popup = labels) %>%
+    setView(lng = -69, lat = 43.7, zoom = 7.5) 
+```
+
+
+Reformat the date column to be yyyy-mm-dd
+
+```{r}
+tempDf$Date = lubridate::mdy(tempDf$Date)
+
+```
+
+Make a scatter plot of the temperature difference data
+
+```{r}
+ggplot(tempDf, aes(x=Date, y=TempDiff)) + geom_point(size = 1)+ ggtitle("Hourly Difference in Temperature Recordings ") +
+  xlab("Date") + ylab("Temperature Difference in degrees Celcius")
+
+ggplot(tempDf, aes(x=Date, y=Water.Temperature, color = Field.Station)) + geom_point(size = 0.5)+ ggtitle("Hourly Recorded Temperature in degrees Celcius Including Outliers") +
+  xlab("Date") + ylab("Temperature in degrees Celcius")
+```
+
+```{r}
+
+#outliers <- tempDf$Water.Temperature[tempDf$Water.Temperature > 25 | tempDf$Water.Temperature < 0 ] 
+
+
+#Create a dataframe that includes only the outlier data points -- points that are either above 25 degrees calcius or below 0 degrees celcius
+tempOutliersDf <- subset(tempDf, Water.Temperature > 25 | Water.Temperature < 0, select=c(Field.Station, Date, Time, Water.Temperature)) 
+
+#Create a dataframe that includes only the valid temperature data points
+tempsValidDf <- subset(tempDf, Water.Temperature < 25 & Water.Temperature > 0, select=c(Field.Station, Date, Time, Water.Temperature)) 
+
+
+```
+
+```{r temp-range-by-facility, echo = FALSE}
+tempDf %>%
+  ggplot(mapping = aes(x = `Field.Station`, 
+                       y = `TempDiff`,
+                       fill = `Field.Station`)) +
+  geom_violin() +
+  labs(title = "Hourly Difference in Recorded Water Tempteratures",
+       subtitle = "By NeCSA Field Station",
+       y = "Water Temperature (Celsius)") +
+  theme(legend.position = "bottom",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        legend.title = element_blank()) +
+  guides(fill = guide_legend(nrow=3))
+  
+```
+```{r temp-range-by-facility, echo = FALSE}
+tempsValidDf %>%
+  ggplot(mapping = aes(x = `Field.Station`, 
+                       y = `Water.Temperature`,
+                       fill = `Field.Station`)) +
+  geom_violin() +
+  labs(title = "Distribution of Recorded Water Temperatures Excluding Outliers",
+       subtitle = "NeCSA Field Station",
+       y = "Water Temperature (Celsius)") +
+  theme(legend.position = "bottom",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        legend.title = element_blank()) +
+  guides(fill = guide_legend(nrow=3))
+  
+```
+```{r temp-range-by-facility, echo = FALSE}
+tempOutliersDf %>%
+  ggplot(mapping = aes(x = `Field.Station`, 
+                       y = `Water.Temperature`,
+                       fill = `Field.Station`)) +
+  geom_violin() +
+  labs(title = "Distribution of Recorded Water Temperatures Excluding Outliers",
+       subtitle = "NeCSA Field Station",
+       y = "Water Temperature (Celsius)") +
+  theme(legend.position = "bottom",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        legend.title = element_blank()) +
+  guides(fill = guide_legend(nrow=3))
+  
+```
+
+
+```{r temp-vs-time-by-facility-faceted, echo = FALSE}
+# Create faceted line plot of water temperature by field station over time
+tempDf %>%
+  filter(year(Date) == 2016) %>%
+  ggplot(mapping = aes(x = Date, 
+                       y = `Water.Temperature`,
+                       color = `Field.Station`)) +
+  geom_line(show.legend = FALSE) +
+  facet_wrap(~ `Field.Station`, ncol = 5) +
+  labs(title = "Recorded Water Temperature Over Time",
+       subtitle = "Faceted By NeCSA Field Station",
+       y = "Water Temperature (Celsius)",
+       x = "Date") +
+  scale_x_date(date_breaks = "3 months" , date_labels = "%b-%y") +
+  guides(x =  guide_axis(angle = 30)) +
+  coord_polar()
+```
+```{r}
+p <- tempOutliersDf %>%
+  filter(year(Date) == 2016, Field.Station %in% c("Darling Marine Center", "Shoals Marine Laboratory", "Bates-Morse Mountain Conservation Area", "Edward McC. Blair Marine Research Station (MDR)", "Schoodic Institute at Acadia National Park",  "Bigelow Laboratory for Ocean Sciences")) %>%
+  ggplot(
+  aes(Date, Water.Temperature, group = Field.Station, color = factor(Field.Station))
+  ) +
+  geom_line() +
+  scale_color_viridis_d() +
+  labs(x = "Date Collected", y = "Water Temperature in Degrees Celcius") +
+  theme(legend.position = "bottom") + 
+  scale_x_date(date_breaks = "1 months", date_labels = "%b-%y") +
+  #facet_wrap(~Field.Station, ncol = 3) + 
+  guides(color = guide_legend(nrow = 3))
+p
+
+```
+```{r}
+ggplot(tempOutliersDf, aes(x=Date, y=Water.Temperature)) + geom_point()+ ggtitle("Hourly Difference in Temperature Recordings ") +
+  xlab("Date") + ylab("Temperature Difference in degrees Celcius")
+```
+
+
+```{r}
+tempDf$dailyAverageTemp = NA_real_
+tempAverageDf <- tempDf %>%
+  select(Field.Station, Date, Time, Water.Temperature, dailyAverageTemp)
+
+for(i in 17 : (nrow(tempAverageDf) - 27708)) {
+  tempAverageDf$dailyAverageTemp[i] = (sum(tempAverageDf$Water.Temperature[i : (i + 23)])) / 24
+}
+  
+  
+
+```
+
+
+
+```{r}
+p <- tempAverageDf %>%
+  filter(year(Date) == 2016, Field.Station %in% c("Darling Marine Center", "Shoals Marine Laboratory", "Bates-Morse Mountain Conservation Area", "Edward McC. Blair Marine Research Station (MDR)", "Schoodic Institute at Acadia National Park",  "Bigelow Laboratory for Ocean Sciences")) %>%
+  ggplot(
+  aes(Date, dailyAverageTemp, group = Field.Station, color = factor(Field.Station))
+  ) +
+  geom_line() +
+  scale_color_viridis_d() +
+  labs(x = "Date Collected", y = "Water TEmperature in Degrees Celcius") +
+  theme(legend.position = "bottom") + 
+  scale_x_date(date_breaks = "4 months", date_labels = "%b-%y") +
+  #facet_wrap(~Field.Station, ncol = 3) + 
+  transition_reveal(Date) +
+  guides(color = guide_legend(nrow = 3))
+p
+
+animate(p, renderer = gifski_renderer())
+anim_save("temp_anim.gif", anim = last_animation())
+```
+
+
+
+Manoment Gulf Of Maine Crab Observation Data
+Link to Data Collection protocol: https://community-engaged-data-science.netlify.app/project/necsa-manomet-project/manomet_green_crab_protocol.pdf
+
+The Manoment crab data has 10 different site abbreviations: "BR"  "DMC" "FI"  "KB"  "LC"  "NM"  "RH"  "SP"  "HI"  "SPT"
+- BR = 
+- DMC = Damariscotta
+- NM = New Meadows
+- RH = RobinHood Cove
+- SP = Sandy Point
+- HI - Hermit Island
+- 
+There are 7 different crab species identified: NA     "HS"   "CM"   "Cm"   "Ci"   "Hs"   "Cb"   "Cm\n"
+- Cm = Carcinus maenas
+- Cb = Cancer borealis
+- Ci = Cancer irroratus 
+- Hs = Hemigrapsus sanguineus
+- Ha = Homarus americanus
+
+```{r}
+#read in the manoment crab data
+crabDf <- read.csv("GC_intertidal_all_rawdata.csv")
+#reformat the date columns into one column to be m-dd-yyyy
+crabDf$Date <- paste(crabDf$mon, "-", crabDf$day, "-", crabDf$yr, sep="")
+```
+
+
+```{r}
+crabDf %>%
+  group_by(Species) %>%
+  summarise(count = n())
+
+```
+
+
+```{r}
+
+tempDf %>%
+  filter(year(Date) == 2016) %>% 
+ggplot(aes(x=day(Date),y=month(Date))) + geom_tile(aes(fill=Water.Temperature)) + scale_fill_viridis() +
+    #scale_x_date(date_breaks = "4 months", date_labels = "%B") +scale_x_date(date_labels = "%B")
+    labs(x = "Day of the Month", y = "Month") +
+    facet_wrap(~Field.Station)
+```
+
+```{r}
+#q <- tempDf %>%
+  #filter(year(Date) == 2016) %>% 
+  ggplot(data = tempDf, aes(x=day(Date),y=month(Date))) + geom_tile(aes(fill=Water.Temperature)) + scale_fill_viridis() +
+    #scale_x_date(date_breaks = "4 months", date_labels = "%B") +scale_x_date(date_labels = "%B")
+    labs(x = "Day of the Month", y = "Month") +
+    facet_wrap(~Field.Station)
+```
+
+This loads in the species data from a github repository.
+
+```{r}
+urlfile="https://raw.githubusercontent.com/LaurieLBaker/NeSCA-Field-Stations/main/data/NeCSA_data_template_Horizontal_Transect_Data.csv"
+
+mydata<-read.csv(url(urlfile))
+```
+
+Removing the time column since it is NA for all rows
+```{r}
+data <- subset(mydata, select = -Time) 
+```
+
+The next step here is to find the difference between 0, NA, and blank for the last few columns.
+
+```{r}
+summary(data) # generating summary statistics for the data 
+```
+
+Cleaning the data
+
+```{r}
+data2<-data[(data$Species.Code=="AscoCC" | data$Species.Code=="ChonCrSC"),]
+data2<- data2[-12]
+
+data2$Canopy.cover..0.25.[is.na(data2$Canopy.cover..0.25.)] <- ""
+data2$Substrate.Cover[is.na(data2$Substrate.Cover)] <- ""
+
+data2$Species.Count <- paste(data2$Canopy.cover..0.25., data2$Substrate.Cover)
+```
+
+
+Importing the temperature data from a github repository 
+```{r}
+urlfile="https://raw.githubusercontent.com/LaurieLBaker/NeSCA-Field-Stations/main/data/NeCSA_data_template_Temperature_Data.csv"
+
+tempdata<-read.csv(url(urlfile))
+
+tempdata <- subset(tempdata, select = -Data.Collection.Site)
+```
+
+
+```{r}
+summary(tempdata) # generating summary statistics for the temperature data 
+```
+
+Creating a boxplot to visualize outliers for temperature reading by site. 
+```{r}
+labels = c("Shoals", "MDR", "Darling", "Schoodic", "BMM", "Bigelow") # labling the x axis
+boxplot(split(tempdata$Water.Temperature, tempdata$Field.Station), names=labels, col="blue", xlab="Field Station", ylab= "Temperature (C)")
+```
+
+```{r}
+ggplot(data=tempdata, aes(x=date, y=Water.Temperature, group=Field.Station)) +
+  geom_line()+
+  geom_point()
+```
+
+
+```{r}
+tempdata <- tempdata %>% 
+  mutate(tempdiff = tempdata$Water.Temperature[2:nrow(tempdata)] - tempdata$Water.Temperature[1:(nrow(tempdata)-1)])
+
+tempdiff = tempdata$Water.Temperature[2:nrow(tempdata)] - tempdata$Water.Temperature[1:(nrow(tempdata)-1)]
+
+tempdiff <- insertRows(tempdiff, 1, new=NA)
+
+tempdata$tempdiff <- tempdiff
+```
+
+```{r}
+# getting the temperature data just for the Shoals Marine Lab 
+shoalstemp <- tempdata[1:9131,]
+
+tempdata$Date <- as.Date(tempdata$Date, format = "%m-%d-%Y")
+
+ggplot2(shoalstemp,aes(x=Date, y=Water.Temperature))+geom_line()
+
+plot(shoalstemp$Date, shoalstemp$Water.Temperature, type = '1')
+```
+
+```{r barplot}
+data %>%
+  filter(species %in% c("Droid", "Human", "Gungan")) %>%
+ggplot(aes(x=species, fill=eye_color)) +
+  geom_bar() +
+  coord_flip() +
+  labs(fill = "Eye Color",
+       x = "Species")
+```
+
+
+
+
+
+```{r Manomet data prep}
+man_data <- read.csv("GC_intertidal_all_rawdata.csv") # loading in Manomet data from local csv file
+head(man_data) # previewing data 
+```
+
+```{r}
+unique(man_data$Notes) # finding all the unique entries in the rows column
+```
+
+```{r}
+unique(man_data$Site) # finding all unique sites in Manomet data 
+```
+The different sites in the Manomet data are BR, DMC, FI, KB, LC, NM, RH, SP, HI, SPT
+
+
+Creating date column which will combine all parts of the date into one column with standard format
+```{r}
+
+man_data$Date <- paste(man_data$mon, "-", man_data$day, "-", man_data$yr, sep="") # this combines all date pieces into one format and a new Date column
+
+# removing all columns we do not need for analysis
+#man_data <- subset(man_data, select = -GPS)
+#man_data <- subset(man_data, select = -yr)
+#man_data <- subset(man_data, select = -mon)
+#man_data <- subset(man_data, select = -day)
+#man_data <- subset(man_data, select = -participants.notes)
+```
+
+
+The following code chunk fixes typos and capitalization errors in the species column of the data. This same code can be used to fixe similar errors in other columns of similar datasets if altered.
+```{r}
+man_data["Species" == "CM",] <- "Cm" # replacing CM with Cm 
+man_data["Species" == "HS",] <- "Hs" # replacing HS with Hs
+#man_data[str_detect(man_data$Species, pattern = "Cm"),] <- "Cm"
+
+# We ran into an issue where there was Cm and Cm both read as a different format so the next few lines fixed this issues by detecting the incorrect format and replacing it with the correct one. Although these both look the same to use, when we make our visualizations late this is an issue since it is read as two separate species. 
+man_data <- man_data %>%
+  mutate(Species = case_when(str_detect(Species, pattern = "Cm") | Species == "CM" ~ "Cm",
+                             Species == "HS" ~ "Hs",
+            TRUE ~ Species),
+         `Common Name` = case_when(Species == "Cm" ~ "Green Crab"),
+         )
+```
+
+
+This next chunk creates a bar graph by month or year of crabs found at each site. It then colors the bars by species.
+```{r}
+man_data %>%
+  group_by(Site, mon, yr, Species) %>%
+  summarise(count = n()) %>%
+ggplot(aes(x=Site, fill=Species)) +
+  geom_bar() +
+  coord_flip() +
+  labs(fill = "Species",
+       x = "Site") +
+  facet_wrap(~yr) # change mon to yr and vise versa if you want to look at it by year or month 
+
+```
+
+This creates a similar plot but it is a line graph to show change over time instead of count by site in a certain time period. 
+
+```{r}
+man_data %>%
+  group_by(Site, Date, Species) %>%
+  summarise(count = n()) %>%
+ggplot(aes(x = Date, y = count, group=Species, color=Species)) +
+  geom_line() +
+  labs(fill = "Species",
+       x = "Site") +
+  facet_wrap(
+    ~Site) 
+```
+
+The following code generates a sex distribution plot:
+
+```{r}
+
+crab$Date = NA_real_ # create a new column for dates
+crab$Date = paste(crab$mon,"/",crab$day,"/",crab$yr, sep = "") # merge all the years, months, and dates respectively
+#crab$Date = as.Date(crab$Date, format = "%m/%d/$Y")
+
+crab %>% 
+    mutate(Species = case_when(str_detect(Species, pattern = "Cm") | Species == 
+"CM" ~ "Cm" ,
+            TRUE ~ Species),
+         'Common Name' = case_when(Species == "Cm" ~ "Green Crab"),
+         ) %>% 
+  filter(Sex == "F" | Sex == "M") %>%  # select sex only recorded as F or M, there are two points where sex is marked "2"
+  group_by(Species, Site, Sex) %>%     # group dataframe with the selected 
+  summarise(count = n()) %>%           # count how many species 
+  ggplot(aes(x = Species, y = count, fill = Sex)) +  # each bar is filled by sex
+  geom_col() +        # plot type - column graph
+  labs(title = "Species' Sex Distribution in Different Sites") + 
+  facet_wrap(~Site)   # classify each sub-graph by sites
+  #coord_flip()       # flip rows and columns
+```
+
+
